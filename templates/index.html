@@ -48,6 +48,7 @@
             <form action="{{ url_for('restore_system') }}" method="post" style="display:inline;">
               <button type="submit" class="btn btn--ghost admin-only" title="Khôi phục backup gần nhất">♻️ Restore</button>
             </form>
+            <a href="{{ url_for('status_page') }}" class="btn btn--ghost admin-only" title="Xem trạng thái backup/restore">📊 Status</a>
           {% endif %}
           <a href="#library" class="btn btn--ghost" aria-label="Read stories" title="Read stories">📚 Xem thư viện</a>
           <button type="button" id="themeToggle" class="btn btn--ghost theme-toggle" aria-label="Switch theme" title="Switch theme">🎨 Change theme</button>

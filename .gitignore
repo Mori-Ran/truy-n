@@ -1,1 +1,5 @@
 .env
+instance/
+instance/backups/
+instance/backup_manifest.json
+instance/google_drive_oauth.json

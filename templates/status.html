@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Status</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    <style>
+      body { padding: 24px; }
+      .status-card { background: rgba(255,255,255,0.9); border-radius: 16px; padding: 20px; margin-bottom: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.12); }
+      .status-pill { display: inline-block; padding: 6px 10px; border-radius: 999px; font-weight: 600; font-size: 0.9rem; }
+      .status-pill--success { background: #e7f8ee; color: #1e7c45; }
+      .status-pill--fail { background: #fde8e8; color: #b42318; }
+      .status-pill--idle { background: #f2f4f7; color: #344054; }
+      .status-list { display: grid; gap: 10px; }
+      .status-item { border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
+      .status-meta { color: #667085; font-size: 0.9rem; margin-top: 6px; }
+      .btn { display: inline-block; padding: 10px 14px; border-radius: 999px; text-decoration: none; margin-top: 8px; }
+      .btn--ghost { background: #f3f4f6; color: #111827; }
+    </style>
+  </head>
+  <body class="{{ 'admin-active' if is_admin else 'guest-active' }}">
+    <div class="status-card">
+      <h1>📊 Admin Backup & Restore Status</h1>
+      <p>Trang này hiển thị kết quả gần nhất của hoạt động backup và restore.</p>
+      <a href="{{ url_for('index') }}" class="btn btn--ghost">← Quay về trang chủ</a>
+    </div>
+
+    <div class="status-card">
+      <h2>Backup</h2>
+      {% set backup_state = 'success' if backup_status.success else 'fail' if backup_status.status == 'fail' else 'idle' %}
+      <span class="status-pill status-pill--{{ backup_state }}">{{ 'Thành công' if backup_state == 'success' else 'Thất bại' if backup_state == 'fail' else 'Chờ' }}</span>
+      <p>{{ backup_status.message }}</p>
+      {% if backup_status.timestamp %}<div class="status-meta">Cập nhật lúc: {{ backup_status.timestamp }}</div>{% endif %}
+    </div>
+
+    <div class="status-card">
+      <h2>Restore</h2>
+      {% set restore_state = 'success' if restore_status.success else 'fail' if restore_status.status == 'fail' else 'idle' %}
+      <span class="status-pill status-pill--{{ restore_state }}">{{ 'Thành công' if restore_state == 'success' else 'Thất bại' if restore_state == 'fail' else 'Chờ' }}</span>
+      <p>{{ restore_status.message }}</p>
+      {% if restore_status.timestamp %}<div class="status-meta">Cập nhật lúc: {{ restore_status.timestamp }}</div>{% endif %}
+    </div>
+
+    <div class="status-card">
+      <h2>Lịch sử gần đây</h2>
+      <div class="status-list">
+        {% for entry in status_history %}
+          <div class="status-item">
+            <strong>{{ 'Backup' if entry.operation == 'backup' else 'Restore' }}</strong>
+            <div>{{ entry.message }}</div>
+            <div class="status-meta">{{ entry.timestamp }} · {{ 'Thành công' if entry.success else 'Thất bại' }}</div>
+          </div>
+        {% else %}
+          <div class="status-item">Chưa có lịch sử hoạt động nào.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </body>
+</html>

@@ -47,8 +47,21 @@ BACKUP_SUBFOLDER_NAMES = {
     'version': 'version',
 }
 BACKUP_THREAD = None
+BACKUP_INTERVAL_SECONDS = 12 * 60
+BACKUP_RETENTION_LIMIT = 5
 BACKUP_THREAD_STOP_EVENT = threading.Event()
 BACKUP_THREAD_STARTED = False
+BACKUP_STATUS = {
+    'status': 'idle',
+    'message': 'Chưa có hoạt động backup nào.',
+    'timestamp': None,
+}
+RESTORE_STATUS = {
+    'status': 'idle',
+    'message': 'Chưa có hoạt động restore nào.',
+    'timestamp': None,
+}
+STATUS_HISTORY = []
 
 GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '').strip()
 GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '').strip()
@@ -271,23 +284,32 @@ def delete_file_from_google_drive(file_id):
         raise RuntimeError(f'Google Drive delete failed for {file_id}: {exc}') from exc
 
 
-def prune_old_backups(backup_root, prefix):
-    if not os.path.exists(backup_root):
+def prune_old_drive_backups(service, folder_id, prefix):
+    if not folder_id or not service:
         return
-    files = []
-    for filename in os.listdir(backup_root):
-        if not filename.startswith(prefix) or not filename.endswith('.json'):
+    try:
+        result = service.files().list(
+            q=f"'{folder_id}' in parents and trashed=false and name contains '{prefix}'",
+            fields='files(id,name,modifiedTime)',
+            orderBy='modifiedTime desc',
+            pageSize=100,
+        ).execute()
+    except Exception as exc:
+        app.logger.warning('Failed to list Drive backups under folder %s: %s', folder_id, exc)
+        return
+
+    files = result.get('files') or []
+    if len(files) <= BACKUP_RETENTION_LIMIT:
+        return
+
+    for old_file in files[BACKUP_RETENTION_LIMIT:]:
+        file_id = old_file.get('id')
+        if not file_id:
             continue
-        full_path = os.path.join(backup_root, filename)
-        if os.path.isfile(full_path):
-            files.append((os.path.getmtime(full_path), full_path))
-    files.sort(key=lambda item: item[0])
-    while len(files) > 10:
-        _, old_path = files.pop(0)
         try:
-            os.remove(old_path)
-        except OSError:
-            pass
+            service.files().delete(fileId=file_id).execute()
+        except Exception as exc:
+            app.logger.warning('Failed to delete old Drive backup %s: %s', file_id, exc)
 
 
 def create_backup_snapshot():
@@ -340,44 +362,19 @@ def create_backup_snapshot():
         'chapter_count': backup_payload['chapter_count'],
     }
 
-    backup_root = os.path.join(instance_dir, 'backups')
-    backup_subfolders = {
-        'database': os.path.join(backup_root, BACKUP_SUBFOLDER_NAMES['database']),
-        'metadata': os.path.join(backup_root, BACKUP_SUBFOLDER_NAMES['metadata']),
-        'version': os.path.join(backup_root, BACKUP_SUBFOLDER_NAMES['version']),
-        'logs': os.path.join(backup_root, BACKUP_SUBFOLDER_NAMES['logs']),
-    }
-    for folder_path in backup_subfolders.values():
-        os.makedirs(folder_path, exist_ok=True)
+    drive_folder_ids = get_system_drive_folder_ids()
+    if not drive_folder_ids:
+        raise RuntimeError('Google Drive backup folders are not configured. Set GOOGLE_DRIVE_SYSTEM_FOLDER_ID and authorize Drive first.')
 
-    local_files = {}
-    for category, payload in [('database', backup_payload), ('metadata', metadata_payload), ('version', version_payload), ('logs', logs_payload)]:
-        filename = f'{category}_{timestamp}.json'
-        local_path = os.path.join(backup_subfolders[category], filename)
-        with open(local_path, 'w', encoding='utf-8') as fh:
-            json.dump(payload, fh, ensure_ascii=False, indent=2)
-        local_files[category] = local_path
+    credentials = get_google_drive_credentials()
+    if not credentials:
+        raise RuntimeError('Google Drive credentials are not available yet. Please authorize the Drive flow first.')
 
-    for category, folder_path in backup_subfolders.items():
-        prune_old_backups(folder_path, f'{category}_')
-
-    manifest = {
-        'created_at': created_at,
-        'database_file': local_files['database'],
-        'metadata_file': local_files['metadata'],
-        'version_file': local_files['version'],
-        'logs_file': local_files['logs'],
-    }
-
-    manifest_path = os.path.join(instance_dir, 'backup_manifest.json')
-    with open(manifest_path, 'w', encoding='utf-8') as fh:
-        json.dump(manifest, fh, ensure_ascii=False, indent=2)
-
+    service = build('drive', 'v3', credentials=credentials)
     uploaded_database = None
     uploaded_metadata = None
     uploaded_version = None
     uploaded_logs = None
-    drive_folder_ids = get_system_drive_folder_ids()
 
     try:
         uploaded_database = upload_text_to_google_drive(
@@ -385,6 +382,7 @@ def create_backup_snapshot():
             f'database_{timestamp}.json',
             drive_folder_ids.get('database', ''),
         )
+        prune_old_drive_backups(service, drive_folder_ids.get('database', ''), 'database_')
     except Exception as exc:
         app.logger.warning('Database backup upload failed: %s', exc)
     try:
@@ -393,6 +391,7 @@ def create_backup_snapshot():
             f'metadata_{timestamp}.json',
             drive_folder_ids.get('metadata', ''),
         )
+        prune_old_drive_backups(service, drive_folder_ids.get('metadata', ''), 'metadata_')
     except Exception as exc:
         app.logger.warning('Metadata backup upload failed: %s', exc)
     try:
@@ -401,6 +400,7 @@ def create_backup_snapshot():
             f'version_{timestamp}.json',
             drive_folder_ids.get('version', ''),
         )
+        prune_old_drive_backups(service, drive_folder_ids.get('version', ''), 'version_')
     except Exception as exc:
         app.logger.warning('Version backup upload failed: %s', exc)
     try:
@@ -409,6 +409,7 @@ def create_backup_snapshot():
             f'logs_{timestamp}.json',
             drive_folder_ids.get('logs', ''),
         )
+        prune_old_drive_backups(service, drive_folder_ids.get('logs', ''), 'logs_')
     except Exception as exc:
         app.logger.warning('Logs backup upload failed: %s', exc)
 
@@ -430,31 +431,7 @@ def create_backup_snapshot():
 
 
 def restore_latest_backup():
-    manifest_path = os.path.join(instance_dir, 'backup_manifest.json')
-    manifest = None
-    if os.path.exists(manifest_path):
-        with open(manifest_path, 'r', encoding='utf-8') as fh:
-            manifest = json.load(fh)
-
-    backup_path = None
-    if manifest:
-        backup_path = manifest.get('database_file')
-    if not backup_path or not os.path.exists(backup_path):
-        backup_root = os.path.join(instance_dir, 'backups', BACKUP_SUBFOLDER_NAMES['database'])
-        if os.path.exists(backup_root):
-            candidates = sorted([os.path.join(backup_root, filename) for filename in os.listdir(backup_root) if filename.endswith('.json') and filename.startswith('database_')])
-            if candidates:
-                backup_path = candidates[-1]
-    if not backup_path or not os.path.exists(backup_path):
-        return None
-    with open(backup_path, 'r', encoding='utf-8') as fh:
-        payload = json.load(fh)
-
-    restored_stories = payload.get('stories', [])
-    if restored_stories is None:
-        restored_stories = []
-    stories[:] = copy.deepcopy(restored_stories)
-    return payload
+    return restore_latest_backup_from_drive()
 
 
 def restore_latest_backup_from_drive():
@@ -518,9 +495,11 @@ def start_periodic_backup_thread():
         while not BACKUP_THREAD_STOP_EVENT.is_set():
             try:
                 create_backup_snapshot()
+                update_operation_status('backup', True, 'Backup tự động thành công vào Google Drive.')
             except Exception as exc:
+                update_operation_status('backup', False, f'Backup tự động thất bại: {exc}')
                 app.logger.warning('Periodic backup failed: %s', exc)
-            if BACKUP_THREAD_STOP_EVENT.wait(300):
+            if BACKUP_THREAD_STOP_EVENT.wait(BACKUP_INTERVAL_SECONDS):
                 break
 
     BACKUP_THREAD = threading.Thread(target=_backup_loop, daemon=True, name='backup-loop')
@@ -536,6 +515,25 @@ def require_admin():
         flash('Để tạo bất cứ thứ gì, hãy về trang chủ bấm vào nút đăng nhập để có quyền.', 'error')
         return False
     return True
+
+
+def update_operation_status(operation, success, message):
+    global BACKUP_STATUS, RESTORE_STATUS, STATUS_HISTORY
+    timestamp = datetime.now(timezone.utc).isoformat()
+    entry = {
+        'operation': operation,
+        'success': bool(success),
+        'message': message,
+        'timestamp': timestamp,
+    }
+    STATUS_HISTORY.append(entry)
+    if len(STATUS_HISTORY) > 10:
+        STATUS_HISTORY = STATUS_HISTORY[-10:]
+    if operation == 'backup':
+        BACKUP_STATUS = entry
+    else:
+        RESTORE_STATUS = entry
+    return entry
 
 
 @app.route('/auth', methods=['POST'])
@@ -575,8 +573,10 @@ def backup_system():
         return redirect(url_for('index'))
     try:
         create_backup_snapshot()
-        flash('Đã tạo bản backup mới và lưu vào thư mục backup cục bộ cùng Drive nếu có sẵn.', 'success')
+        update_operation_status('backup', True, 'Đã tạo bản backup mới và lưu vào Google Drive.')
+        flash('Đã tạo bản backup mới và lưu vào thư mục backup trên Google Drive.', 'success')
     except Exception as exc:
+        update_operation_status('backup', False, f'Không thể tạo backup: {exc}')
         flash(f'Không thể tạo backup: {exc}', 'error')
     return redirect(url_for('index'))
 
@@ -588,12 +588,22 @@ def restore_system():
     try:
         restored = restore_latest_backup()
         if restored:
-            flash('Đã khôi phục bản backup gần nhất vào trạng thái hiện tại.', 'success')
+            update_operation_status('restore', True, 'Đã khôi phục bản backup gần nhất từ Google Drive vào trạng thái hiện tại.')
+            flash('Đã khôi phục bản backup gần nhất từ Google Drive vào trạng thái hiện tại.', 'success')
         else:
-            flash('Không tìm thấy bản backup gần nhất để khôi phục.', 'error')
+            update_operation_status('restore', False, 'Không tìm thấy bản backup gần nhất trên Google Drive để khôi phục.')
+            flash('Không tìm thấy bản backup gần nhất trên Google Drive để khôi phục.', 'error')
     except Exception as exc:
+        update_operation_status('restore', False, f'Không thể khôi phục backup: {exc}')
         flash(f'Không thể khôi phục backup: {exc}', 'error')
     return redirect(url_for('index'))
+
+
+@app.route('/status')
+def status_page():
+    if not require_admin():
+        return redirect(url_for('index'))
+    return render_template('status.html', stories=stories, is_admin=is_admin(), backup_status=BACKUP_STATUS, restore_status=RESTORE_STATUS, status_history=STATUS_HISTORY)
 
 
 @app.route('/')
