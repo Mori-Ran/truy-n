@@ -51,6 +51,8 @@ BACKUP_INTERVAL_SECONDS = 12 * 60
 BACKUP_RETENTION_LIMIT = 5
 BACKUP_THREAD_STOP_EVENT = threading.Event()
 BACKUP_THREAD_STARTED = False
+AUTO_BACKUP_PENDING = False
+BACKUP_TRIGGER_EVENT = threading.Event()
 BACKUP_STATUS = {
     'status': 'idle',
     'message': 'Chưa có hoạt động backup nào.',
@@ -434,6 +436,18 @@ def restore_latest_backup():
     return restore_latest_backup_from_drive()
 
 
+def _is_meaningful_backup_payload(payload):
+    if not isinstance(payload, dict):
+        return False
+    stories = payload.get('stories')
+    if isinstance(stories, list):
+        if len(stories) > 0:
+            return True
+        if payload.get('story_count', 0) > 0 or payload.get('chapter_count', 0) > 0:
+            return True
+    return False
+
+
 def restore_latest_backup_from_drive():
     if not os.getenv('GOOGLE_DRIVE_SYSTEM_FOLDER_ID', '').strip():
         return None
@@ -452,37 +466,53 @@ def restore_latest_backup_from_drive():
     if not database_folder_id or not metadata_folder_id:
         return None
 
-    def _latest_file(folder_id, prefix):
+    def _latest_valid_file(folder_id, prefix):
         if not folder_id:
             return None
         query = f"'{folder_id}' in parents and trashed=false and name contains '{prefix}'"
-        result = service.files().list(q=query, fields='files(id,name,modifiedTime)', orderBy='modifiedTime desc', pageSize=20).execute()
+        result = service.files().list(q=query, fields='files(id,name,modifiedTime,size)', orderBy='modifiedTime desc', pageSize=20).execute()
         files = result.get('files') or []
         if not files:
             return None
-        return files[0]
-
-    database_item = _latest_file(database_folder_id, 'database_')
-    metadata_item = _latest_file(metadata_folder_id, 'metadata_')
-    if not database_item or not metadata_item:
+        for file_info in files:
+            size = int(file_info.get('size') or 0)
+            if size <= 0:
+                continue
+            try:
+                payload_bytes = service.files().get_media(fileId=file_info['id']).execute()
+            except Exception as exc:
+                app.logger.warning('Drive backup download failed for %s: %s', file_info.get('name'), exc)
+                continue
+            if not payload_bytes:
+                continue
+            try:
+                payload = json.loads(payload_bytes.decode('utf-8'))
+            except Exception:
+                continue
+            if _is_meaningful_backup_payload(payload):
+                return payload, file_info
         return None
 
-    try:
-        database_bytes = service.files().get_media(fileId=database_item['id']).execute()
-        metadata_bytes = service.files().get_media(fileId=metadata_item['id']).execute()
-    except Exception as exc:
-        app.logger.warning('Drive backup download failed: %s', exc)
+    database_result = _latest_valid_file(database_folder_id, 'database_')
+    metadata_result = _latest_valid_file(metadata_folder_id, 'metadata_')
+    if not database_result or not metadata_result:
         return None
 
-    database_payload = json.loads(database_bytes.decode('utf-8'))
-    metadata_payload = json.loads(metadata_bytes.decode('utf-8'))
-    if database_payload.get('stories') is not None:
+    database_payload, _ = database_result
+    metadata_payload, _ = metadata_result
+    if _is_meaningful_backup_payload(database_payload):
         stories[:] = copy.deepcopy(database_payload.get('stories', []))
         return database_payload
-    if metadata_payload.get('stories') is not None:
+    if _is_meaningful_backup_payload(metadata_payload):
         stories[:] = copy.deepcopy(metadata_payload.get('stories', []))
         return metadata_payload
     return None
+
+
+def request_auto_backup():
+    global AUTO_BACKUP_PENDING
+    AUTO_BACKUP_PENDING = True
+    BACKUP_TRIGGER_EVENT.set()
 
 
 def start_periodic_backup_thread():
@@ -493,14 +523,19 @@ def start_periodic_backup_thread():
 
     def _backup_loop():
         while not BACKUP_THREAD_STOP_EVENT.is_set():
-            try:
-                create_backup_snapshot()
-                update_operation_status('backup', True, 'Backup tự động thành công vào Google Drive.')
-            except Exception as exc:
-                update_operation_status('backup', False, f'Backup tự động thất bại: {exc}')
-                app.logger.warning('Periodic backup failed: %s', exc)
+            if AUTO_BACKUP_PENDING:
+                AUTO_BACKUP_PENDING = False
+                BACKUP_TRIGGER_EVENT.clear()
+                try:
+                    create_backup_snapshot()
+                    update_operation_status('backup', True, 'Backup tự động thành công vào Google Drive.')
+                except Exception as exc:
+                    update_operation_status('backup', False, f'Backup tự động thất bại: {exc}')
+                    app.logger.warning('Periodic backup failed: %s', exc)
             if BACKUP_THREAD_STOP_EVENT.wait(BACKUP_INTERVAL_SECONDS):
                 break
+            if BACKUP_TRIGGER_EVENT.is_set():
+                continue
 
     BACKUP_THREAD = threading.Thread(target=_backup_loop, daemon=True, name='backup-loop')
     BACKUP_THREAD.start()
@@ -693,6 +728,11 @@ def edit_story(story_id):
         story['genre'] = request.form.get('genre', story['genre']).strip() or story['genre']
         story['tags'] = request.form.get('tags', story.get('tags', '')).strip()
         story['description'] = request.form.get('description', story['description']).strip() or story['description']
+        request_auto_backup()
+        try:
+            create_backup_snapshot()
+        except Exception as exc:
+            app.logger.warning('Backup snapshot skipped after story edit: %s', exc)
         flash('Đã cập nhật truyện.', 'success')
         return redirect(url_for('story_view', story_id=story_id))
 
@@ -727,6 +767,7 @@ def delete_story(story_id):
             flash(f'Không thể xóa ảnh bìa truyện trên Drive: {exc}', 'error')
 
     stories[:] = [s for s in stories if s['id'] != story_id]
+    request_auto_backup()
     try:
         create_backup_snapshot()
     except Exception as exc:
@@ -787,6 +828,7 @@ def edit_chapter(story_id, chapter_index):
                         chapter['chapter_drive_name'] = uploaded.get('name')
                 except Exception as exc:
                     flash(f'Không thể tạo file chapter mới trên Drive: {exc}', 'error')
+        request_auto_backup()
         try:
             create_backup_snapshot()
         except Exception as exc:
@@ -819,6 +861,7 @@ def delete_chapter(story_id, chapter_index):
             flash(f'Không thể xóa ảnh chapter trên Drive: {exc}', 'error')
 
     del story['chapters'][chapter_index]
+    request_auto_backup()
     try:
         create_backup_snapshot()
     except Exception as exc:
@@ -879,6 +922,7 @@ def create_story():
         'chapters': []
     }
     stories.append(story)
+    request_auto_backup()
     try:
         create_backup_snapshot()
     except Exception as exc:
@@ -965,6 +1009,7 @@ def create_chapter(story_id):
         'chapter_drive_name': chapter_drive_file.get('name') if chapter_drive_file else None,
         'chapter_cover_drive_id': chapter_cover_drive_id,
     })
+    request_auto_backup()
     try:
         create_backup_snapshot()
     except Exception as exc:
