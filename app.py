@@ -48,7 +48,8 @@ BACKUP_SUBFOLDER_NAMES = {
 }
 BACKUP_THREAD = None
 BACKUP_INTERVAL_SECONDS = 12 * 60
-BACKUP_RETENTION_LIMIT = 10
+BACKUP_RETENTION_LIMIT = 5
+BACKUP_COUNT_LIMIT = 5
 BACKUP_THREAD_STOP_EVENT = threading.Event()
 BACKUP_THREAD_STARTED = False
 AUTO_BACKUP_PENDING = False
@@ -326,14 +327,52 @@ def prune_old_drive_backups(service, folder_id, prefix):
     if len(files) <= BACKUP_RETENTION_LIMIT:
         return
 
-    for old_file in files[BACKUP_RETENTION_LIMIT:]:
+    files_to_delete = files[BACKUP_RETENTION_LIMIT:]
+    if not files_to_delete:
+        return
+
+    for old_file in files_to_delete:
         file_id = old_file.get('id')
         if not file_id:
             continue
         try:
             service.files().delete(fileId=file_id).execute()
+            app.logger.info('Deleted old Drive backup %s from folder %s', old_file.get('name'), folder_id)
         except Exception as exc:
             app.logger.warning('Failed to delete old Drive backup %s: %s', file_id, exc)
+
+
+def enforce_backup_count_limit(service, folder_id, prefix):
+    if not folder_id or not service:
+        return []
+    try:
+        result = service.files().list(
+            q=f"'{folder_id}' in parents and trashed=false and name contains '{prefix}'",
+            fields='files(id,name,modifiedTime)',
+            orderBy='modifiedTime desc',
+            pageSize=100,
+        ).execute()
+    except Exception as exc:
+        app.logger.warning('Failed to inspect backup count for folder %s: %s', folder_id, exc)
+        return []
+
+    files = result.get('files') or []
+    if len(files) <= BACKUP_COUNT_LIMIT:
+        return []
+
+    files_to_delete = files[BACKUP_COUNT_LIMIT:]
+    deleted = []
+    for old_file in files_to_delete:
+        file_id = old_file.get('id')
+        if not file_id:
+            continue
+        try:
+            service.files().delete(fileId=file_id).execute()
+            deleted.append(old_file.get('name'))
+            app.logger.info('Auto-pruned oldest backup %s from folder %s', old_file.get('name'), folder_id)
+        except Exception as exc:
+            app.logger.warning('Failed to auto-delete old backup %s: %s', old_file.get('name'), exc)
+    return deleted
 
 
 def create_backup_snapshot():
@@ -412,6 +451,7 @@ def create_backup_snapshot():
         )
         if service:
             prune_old_drive_backups(service, drive_folder_ids.get('database', ''), 'database_')
+            enforce_backup_count_limit(service, drive_folder_ids.get('database', ''), 'database_')
     except Exception as exc:
         app.logger.warning('Database backup upload failed: %s', exc)
     try:
@@ -422,6 +462,7 @@ def create_backup_snapshot():
         )
         if service:
             prune_old_drive_backups(service, drive_folder_ids.get('metadata', ''), 'metadata_')
+            enforce_backup_count_limit(service, drive_folder_ids.get('metadata', ''), 'metadata_')
     except Exception as exc:
         app.logger.warning('Metadata backup upload failed: %s', exc)
     try:
@@ -432,6 +473,7 @@ def create_backup_snapshot():
         )
         if service:
             prune_old_drive_backups(service, drive_folder_ids.get('version', ''), 'version_')
+            enforce_backup_count_limit(service, drive_folder_ids.get('version', ''), 'version_')
     except Exception as exc:
         app.logger.warning('Version backup upload failed: %s', exc)
     try:
@@ -442,6 +484,7 @@ def create_backup_snapshot():
         )
         if service:
             prune_old_drive_backups(service, drive_folder_ids.get('logs', ''), 'logs_')
+            enforce_backup_count_limit(service, drive_folder_ids.get('logs', ''), 'logs_')
     except Exception as exc:
         app.logger.warning('Logs backup upload failed: %s', exc)
 
