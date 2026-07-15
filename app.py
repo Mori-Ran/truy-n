@@ -48,7 +48,7 @@ BACKUP_SUBFOLDER_NAMES = {
 }
 BACKUP_THREAD = None
 BACKUP_INTERVAL_SECONDS = 12 * 60
-BACKUP_RETENTION_LIMIT = 5
+BACKUP_RETENTION_LIMIT = 10
 BACKUP_THREAD_STOP_EVENT = threading.Event()
 BACKUP_THREAD_STARTED = False
 AUTO_BACKUP_PENDING = False
@@ -75,16 +75,28 @@ GOOGLE_DRIVE_NOVELCONTENT_FOLDER_ID = os.getenv('GOOGLE_DRIVE_NOVELCONTENT_FOLDE
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
 
+def _read_drive_folder_setting(*candidate_names):
+    for env_name in candidate_names:
+        value = (os.getenv(env_name, '') or '').strip()
+        if value:
+            return value
+    return ''
+
+
 def get_google_drive_folder_ids():
-    cover_folder_id = (
-        (GOOGLE_DRIVE_COVERPICTURE_FOLDER_ID or '').strip()
-        or os.getenv('GOOGLE_DRIVE_COVERPICTURE_FOLDER_ID', '').strip()
-        or os.getenv('GOOGLE_DRIVE_COVER-IMAGES_FOLDER_ID', '').strip()
+    cover_folder_id = _read_drive_folder_setting(
+        'GOOGLE_DRIVE_COVERPICTURE_FOLDER_ID',
+        'GOOGLE_DRIVE_COVER_PICTURE_FOLDER_ID',
+        'GOOGLE_DRIVE_COVER_IMAGES_FOLDER_ID',
+        'GOOGLE_DRIVE_COVER_IMAGE_FOLDER_ID',
+        'GOOGLE_DRIVE_COVER-IMAGES_FOLDER_ID',
+        'GOOGLE_DRIVE_COVER-IMAGE_FOLDER_ID',
     )
-    novel_folder_id = (
-        (GOOGLE_DRIVE_NOVELCONTENT_FOLDER_ID or '').strip()
-        or os.getenv('GOOGLE_DRIVE_NOVELCONTENT_FOLDER_ID', '').strip()
-        or os.getenv('GOOGLE_DRIVE_NOVEL-CONTENT_FOLDER_ID', '').strip()
+    novel_folder_id = _read_drive_folder_setting(
+        'GOOGLE_DRIVE_NOVELCONTENT_FOLDER_ID',
+        'GOOGLE_DRIVE_NOVEL_CONTENT_FOLDER_ID',
+        'GOOGLE_DRIVE_NOVEL-CONTENT_FOLDER_ID',
+        'GOOGLE_DRIVE_NOVEL_CONTENT_FOLDER_ID',
     )
     return cover_folder_id, novel_folder_id
 
@@ -336,13 +348,16 @@ def create_backup_snapshot():
                 'genre': story.get('genre'),
                 'tags': story.get('tags', ''),
                 'description': story.get('description'),
+                'content': story.get('content', ''),
                 'cover': story.get('cover'),
                 'cover_drive_id': story.get('cover_drive_id'),
                 'chapters': [
                     {
                         'title': chapter.get('title'),
+                        'content': chapter.get('content', ''),
                         'cover': chapter.get('cover'),
                         'chapter_drive_id': chapter.get('chapter_drive_id'),
+                        'chapter_drive_name': chapter.get('chapter_drive_name'),
                         'chapter_cover_drive_id': chapter.get('chapter_cover_drive_id'),
                     }
                     for chapter in story.get('chapters', [])
@@ -364,15 +379,16 @@ def create_backup_snapshot():
         'chapter_count': backup_payload['chapter_count'],
     }
 
-    drive_folder_ids = get_system_drive_folder_ids()
-    if not drive_folder_ids:
-        raise RuntimeError('Google Drive backup folders are not configured. Set GOOGLE_DRIVE_SYSTEM_FOLDER_ID and authorize Drive first.')
-
+    drive_folder_ids = get_system_drive_folder_ids() or {}
     credentials = get_google_drive_credentials()
-    if not credentials:
-        raise RuntimeError('Google Drive credentials are not available yet. Please authorize the Drive flow first.')
+    service = None
+    if credentials:
+        try:
+            service = build('drive', 'v3', credentials=credentials)
+        except Exception as exc:
+            app.logger.warning('Google Drive service unavailable for backup upload: %s', exc)
+            service = None
 
-    service = build('drive', 'v3', credentials=credentials)
     uploaded_database = None
     uploaded_metadata = None
     uploaded_version = None
@@ -384,7 +400,8 @@ def create_backup_snapshot():
             f'database_{timestamp}.json',
             drive_folder_ids.get('database', ''),
         )
-        prune_old_drive_backups(service, drive_folder_ids.get('database', ''), 'database_')
+        if service:
+            prune_old_drive_backups(service, drive_folder_ids.get('database', ''), 'database_')
     except Exception as exc:
         app.logger.warning('Database backup upload failed: %s', exc)
     try:
@@ -393,7 +410,8 @@ def create_backup_snapshot():
             f'metadata_{timestamp}.json',
             drive_folder_ids.get('metadata', ''),
         )
-        prune_old_drive_backups(service, drive_folder_ids.get('metadata', ''), 'metadata_')
+        if service:
+            prune_old_drive_backups(service, drive_folder_ids.get('metadata', ''), 'metadata_')
     except Exception as exc:
         app.logger.warning('Metadata backup upload failed: %s', exc)
     try:
@@ -402,7 +420,8 @@ def create_backup_snapshot():
             f'version_{timestamp}.json',
             drive_folder_ids.get('version', ''),
         )
-        prune_old_drive_backups(service, drive_folder_ids.get('version', ''), 'version_')
+        if service:
+            prune_old_drive_backups(service, drive_folder_ids.get('version', ''), 'version_')
     except Exception as exc:
         app.logger.warning('Version backup upload failed: %s', exc)
     try:
@@ -411,9 +430,33 @@ def create_backup_snapshot():
             f'logs_{timestamp}.json',
             drive_folder_ids.get('logs', ''),
         )
-        prune_old_drive_backups(service, drive_folder_ids.get('logs', ''), 'logs_')
+        if service:
+            prune_old_drive_backups(service, drive_folder_ids.get('logs', ''), 'logs_')
     except Exception as exc:
         app.logger.warning('Logs backup upload failed: %s', exc)
+
+    latest_payload = {
+        'database_uuid': None,
+        'database_generation': 1,
+        'backup_file_id': (uploaded_database or {}).get('id') if uploaded_database else None,
+        'backup_filename': (uploaded_database or {}).get('name') if uploaded_database else None,
+        'sha256': None,
+        'schema_version': 1,
+        'application_version': '1.0.0',
+        'backup_created_at': created_at,
+        'device_id': None,
+        'environment_type': 'development' if os.getenv('FLASK_ENV') == 'development' or os.getenv('RUNNING_LOCAL') == '1' else 'production',
+        'database_size': None,
+    }
+    try:
+        uploaded_latest = upload_text_to_google_drive(
+            json.dumps(latest_payload, ensure_ascii=False, indent=2),
+            'latest.json',
+            drive_folder_ids.get('metadata', ''),
+        )
+    except Exception as exc:
+        app.logger.warning('Latest metadata pointer upload failed: %s', exc)
+        uploaded_latest = None
 
     return {
         'created_at': created_at,
@@ -428,12 +471,52 @@ def create_backup_snapshot():
             'metadata': {'id': (uploaded_metadata or {}).get('id') if uploaded_metadata else None, 'name': 'metadata'},
             'version': {'id': (uploaded_version or {}).get('id') if uploaded_version else None, 'name': 'version'},
             'logs': {'id': (uploaded_logs or {}).get('id') if uploaded_logs else None, 'name': 'logs'},
+            'latest': {'id': (uploaded_latest or {}).get('id') if uploaded_latest else None, 'name': 'latest.json'},
         },
     }
 
 
-def restore_latest_backup():
-    return restore_latest_backup_from_drive()
+def _load_local_backup_payload(path):
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if _is_meaningful_backup_payload(payload):
+        return payload
+    return None
+
+
+def restore_latest_local_backup():
+    legacy_manifest_path = os.path.join(instance_dir, 'backup_manifest.json')
+    manifest_payload = _load_local_backup_payload(legacy_manifest_path)
+    if manifest_payload and _is_meaningful_backup_payload(manifest_payload):
+        stories[:] = copy.deepcopy(manifest_payload.get('stories', []))
+        return manifest_payload
+
+    backup_root = os.path.join(instance_dir, 'backups')
+    if not os.path.isdir(backup_root):
+        return None
+
+    candidate_payloads = []
+    for subfolder_name in BACKUP_SUBFOLDER_NAMES.values():
+        folder_path = os.path.join(backup_root, subfolder_name)
+        if not os.path.isdir(folder_path):
+            continue
+        for filename in sorted(os.listdir(folder_path)):
+            if not filename.endswith('.json'):
+                continue
+            payload = _load_local_backup_payload(os.path.join(folder_path, filename))
+            if _is_meaningful_backup_payload(payload):
+                candidate_payloads.append((os.path.join(folder_path, filename), payload))
+    if not candidate_payloads:
+        return None
+
+    _, payload = candidate_payloads[-1]
+    stories[:] = copy.deepcopy(payload.get('stories', []))
+    return payload
 
 
 def _is_meaningful_backup_payload(payload):
@@ -448,9 +531,14 @@ def _is_meaningful_backup_payload(payload):
     return False
 
 
+def restore_latest_backup():
+    drive_restored = restore_latest_backup_from_drive()
+    if drive_restored:
+        return drive_restored
+    return restore_latest_local_backup()
+
+
 def restore_latest_backup_from_drive():
-    if not os.getenv('GOOGLE_DRIVE_SYSTEM_FOLDER_ID', '').strip():
-        return None
     credentials = get_google_drive_credentials()
     if not credentials:
         return None
@@ -460,7 +548,7 @@ def restore_latest_backup_from_drive():
         app.logger.warning('Drive service unavailable during restore: %s', exc)
         return None
 
-    folder_ids = get_system_drive_folder_ids()
+    folder_ids = get_system_drive_folder_ids() or {}
     database_folder_id = folder_ids.get('database', '')
     metadata_folder_id = folder_ids.get('metadata', '')
     if not database_folder_id or not metadata_folder_id:
@@ -495,11 +583,15 @@ def restore_latest_backup_from_drive():
 
     database_result = _latest_valid_file(database_folder_id, 'database_')
     metadata_result = _latest_valid_file(metadata_folder_id, 'metadata_')
-    if not database_result or not metadata_result:
+    if not database_result and not metadata_result:
         return None
 
-    database_payload, _ = database_result
-    metadata_payload, _ = metadata_result
+    database_payload = None
+    metadata_payload = None
+    if database_result:
+        database_payload, _ = database_result
+    if metadata_result:
+        metadata_payload, _ = metadata_result
     if _is_meaningful_backup_payload(database_payload):
         stories[:] = copy.deepcopy(database_payload.get('stories', []))
         return database_payload
@@ -522,6 +614,7 @@ def start_periodic_backup_thread():
     BACKUP_THREAD_STARTED = True
 
     def _backup_loop():
+        global AUTO_BACKUP_PENDING
         while not BACKUP_THREAD_STOP_EVENT.is_set():
             if AUTO_BACKUP_PENDING:
                 AUTO_BACKUP_PENDING = False
@@ -558,6 +651,7 @@ def update_operation_status(operation, success, message):
     entry = {
         'operation': operation,
         'success': bool(success),
+        'status': 'success' if success else 'fail',
         'message': message,
         'timestamp': timestamp,
     }
@@ -639,6 +733,27 @@ def status_page():
     if not require_admin():
         return redirect(url_for('index'))
     return render_template('status.html', stories=stories, is_admin=is_admin(), backup_status=BACKUP_STATUS, restore_status=RESTORE_STATUS, status_history=STATUS_HISTORY)
+
+
+@app.route('/dashboard/backup-status')
+def dashboard_backup_status():
+    if not require_admin():
+        return redirect(url_for('index'))
+    return render_template('dashboard/backup_status.html', stories=stories, is_admin=is_admin(), backup_status=BACKUP_STATUS, restore_status=RESTORE_STATUS, status_history=STATUS_HISTORY)
+
+
+@app.route('/dashboard/backup-status/trigger', methods=['POST'])
+def dashboard_backup_status_trigger():
+    if not require_admin():
+        return redirect(url_for('index'))
+    try:
+        create_backup_snapshot()
+        update_operation_status('backup', True, 'Backup thủ công hoàn tất và lưu vào Google Drive.')
+        flash('Backup hoàn tất.', 'success')
+    except Exception as exc:
+        update_operation_status('backup', False, f'Backup thủ công thất bại: {exc}')
+        flash(f'Backup thủ công thất bại: {exc}', 'error')
+    return redirect(url_for('dashboard_backup_status'))
 
 
 @app.route('/')
@@ -799,18 +914,20 @@ def edit_chapter(story_id, chapter_index):
 
     chapter = story['chapters'][chapter_index]
     if request.method == 'POST':
-        new_title = request.form.get('chapter_title', chapter['title']).strip() or chapter['title']
-        new_content = request.form.get('chapter_content', chapter['content']).strip() or chapter['content']
         old_title = chapter.get('title', '')
+        old_content = chapter.get('content', '')
+        new_title = request.form.get('chapter_title', old_title).strip() or old_title
+        new_content = request.form.get('chapter_content', old_content).strip() or old_content
         old_filename = f"{secure_filename(story['title'])}-{secure_filename(old_title)}.txt"
         new_filename = f"{secure_filename(story['title'])}-{secure_filename(new_title)}.txt"
         chapter['title'] = new_title
         chapter['content'] = new_content
 
+        _, novel_folder_id = get_google_drive_folder_ids()
         if new_title == old_title:
-            if chapter.get('chapter_drive_id') and new_content != chapter.get('content', ''):
+            if chapter.get('chapter_drive_id') and new_content != old_content:
                 try:
-                    update_text_file_in_google_drive(chapter['chapter_drive_id'], new_content, old_filename, novel_folder_id := get_google_drive_folder_ids()[1])
+                    update_text_file_in_google_drive(chapter['chapter_drive_id'], new_content, old_filename, novel_folder_id)
                 except Exception as exc:
                     flash(f'Không thể cập nhật nội dung chapter trên Drive: {exc}', 'error')
         elif chapter.get('chapter_drive_id'):
@@ -820,9 +937,9 @@ def edit_chapter(story_id, chapter_index):
                 flash(f'Không thể xóa file chapter cũ trên Drive: {exc}', 'error')
             chapter['chapter_drive_id'] = None
             chapter['chapter_drive_name'] = None
-            if get_google_drive_folder_ids()[1]:
+            if novel_folder_id:
                 try:
-                    uploaded = upload_text_to_google_drive(new_content, new_filename, get_google_drive_folder_ids()[1])
+                    uploaded = upload_text_to_google_drive(new_content, new_filename, novel_folder_id)
                     if uploaded:
                         chapter['chapter_drive_id'] = uploaded.get('id')
                         chapter['chapter_drive_name'] = uploaded.get('name')
@@ -1020,13 +1137,9 @@ def create_chapter(story_id):
 
 def initialize_backup_system():
     try:
-        drive_restored = restore_latest_backup_from_drive()
-        if drive_restored:
-            app.logger.info('Restored latest Drive backup snapshot at startup')
-        else:
-            restored = restore_latest_backup()
-            if restored:
-                app.logger.info('Restored local backup snapshot at startup')
+        restored = restore_latest_backup()
+        if restored:
+            app.logger.info('Restored latest backup snapshot at startup')
     except Exception as exc:
         app.logger.warning('Backup restore skipped at startup: %s', exc)
 

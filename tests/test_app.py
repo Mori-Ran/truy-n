@@ -84,6 +84,15 @@ class AppTests(unittest.TestCase):
         self.assertEqual(cover_folder_id, 'cover-folder-id')
         self.assertEqual(novel_folder_id, 'novel-folder-id')
 
+    def test_drive_folder_ids_support_underscore_env_names(self):
+        with patch.dict(os.environ, {
+            'GOOGLE_DRIVE_COVER_IMAGES_FOLDER_ID': 'cover-folder-id',
+            'GOOGLE_DRIVE_NOVEL_CONTENT_FOLDER_ID': 'novel-folder-id',
+        }, clear=False):
+            cover_folder_id, novel_folder_id = app_module.get_google_drive_folder_ids()
+        self.assertEqual(cover_folder_id, 'cover-folder-id')
+        self.assertEqual(novel_folder_id, 'novel-folder-id')
+
     def test_upload_file_to_google_drive_uses_media_upload(self):
         class DummyCreateRequest:
             def __init__(self, result):
@@ -148,11 +157,26 @@ class AppTests(unittest.TestCase):
             result = create_backup_snapshot()
 
         self.assertEqual(result['database_file_id'], 'db-file-id')
-        self.assertEqual(upload_mock.call_count, 4)
+        self.assertEqual(upload_mock.call_count, 5)
         self.assertEqual(result['story_count'], 1)
         self.assertEqual(result['chapter_count'], 1)
         self.assertEqual(result['folders']['database']['id'], 'db-file-id')
         self.assertEqual(result['folders']['metadata']['id'], 'meta-file-id')
+
+    def test_create_backup_snapshot_uploads_latest_json_metadata_pointer(self):
+        app_module.stories[:] = []
+        with patch('app.get_google_drive_credentials', return_value=object()), patch('app.upload_text_to_google_drive', side_effect=[
+            {'id': 'db-file-id', 'name': 'database_20260715120000.json'},
+            {'id': 'meta-file-id', 'name': 'metadata_20260715120000.json'},
+            {'id': 'version-file-id', 'name': 'version_20260715120000.json'},
+            {'id': 'log-file-id', 'name': 'logs_20260715120000.json'},
+            {'id': 'latest-file-id', 'name': 'latest.json'},
+        ]) as upload_mock:
+            create_backup_snapshot()
+
+        self.assertEqual(upload_mock.call_count, 5)
+        uploaded_names = [call.args[1] for call in upload_mock.call_args_list]
+        self.assertIn('latest.json', uploaded_names)
 
     def test_create_backup_snapshot_keeps_only_ten_newest_files_per_folder(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -170,12 +194,9 @@ class AppTests(unittest.TestCase):
             with patch.object(app_module, 'instance_dir', instance_dir), patch.object(app_module, 'get_system_drive_folder_ids', return_value={}), patch('app.upload_text_to_google_drive', return_value={'id': 'drive-id', 'name': 'backup.json'}):
                 create_backup_snapshot()
 
-            for subfolder_name in app_module.BACKUP_SUBFOLDER_NAMES.values():
-                folder_path = os.path.join(backup_root, subfolder_name)
-                files = sorted([name for name in os.listdir(folder_path) if name.endswith('.json')])
-                self.assertLessEqual(len(files), 10)
-                self.assertTrue(any(name.startswith(f'{subfolder_name}_') for name in files))
-                self.assertTrue(any(name.endswith('.json') for name in files))
+            self.assertIn('backups', os.listdir(instance_dir))
+            self.assertFalse(os.path.exists(os.path.join(instance_dir, 'backup_manifest.json')))
+            self.assertFalse(any(name.endswith('.json') for name in os.listdir(os.path.join(instance_dir, 'backups'))))
 
     def test_auth_accepts_form_submission_for_admin_password(self):
         response = self.client.post('/auth', data={'password': '3,141592653589793'})
@@ -314,6 +335,75 @@ class AppTests(unittest.TestCase):
         self.assertEqual(len(story['chapters']), 0)
         self.assertEqual(delete_mock.call_count, 2)
 
+    def test_create_backup_snapshot_does_not_write_local_files_in_instance(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            instance_dir = os.path.join(tmpdir, 'instance')
+            os.makedirs(instance_dir, exist_ok=True)
+            with patch.object(app_module, 'instance_dir', instance_dir), patch.object(app_module, 'get_system_drive_folder_ids', return_value={}), patch.object(app_module, 'get_google_drive_credentials', return_value=None), patch('app.upload_text_to_google_drive', side_effect=[
+                {'id': 'db-id', 'name': 'database.json'},
+                {'id': 'meta-id', 'name': 'metadata.json'},
+                {'id': 'version-id', 'name': 'version.json'},
+                {'id': 'logs-id', 'name': 'logs.json'},
+            ]):
+                app_module.create_backup_snapshot()
 
-if __name__ == '__main__':
-    unittest.main()
+            backup_root = os.path.join(instance_dir, 'backups')
+            self.assertFalse(os.path.exists(backup_root))
+            self.assertFalse(os.path.exists(os.path.join(instance_dir, 'backup_manifest.json')))
+
+    def test_restore_latest_backup_uses_drive_snapshot_when_available(self):
+        app_module.stories[:] = []
+        payload = {
+            'created_at': '2026-07-15T00:00:00+00:00',
+            'story_count': 1,
+            'chapter_count': 1,
+            'stories': [{
+                'id': 7,
+                'title': 'Restore story',
+                'author': 'Tester',
+                'genre': 'Romance',
+                'description': 'Restored from Drive',
+                'cover': None,
+                'cover_drive_id': None,
+                'chapters': [{'title': 'Chapter 1', 'content': 'Restored content', 'cover': None, 'chapter_drive_id': None, 'chapter_cover_drive_id': None}],
+            }],
+        }
+
+        class DummyListRequest:
+            def __init__(self, result):
+                self.result = result
+            def execute(self):
+                return self.result
+
+        class DummyGetMediaRequest:
+            def __init__(self, payload_bytes):
+                self.payload_bytes = payload_bytes
+            def execute(self):
+                return self.payload_bytes
+
+        class DummyFiles:
+            def __init__(self, payload_bytes):
+                self._payload_bytes = payload_bytes
+                self.list_calls = []
+                self.get_media_calls = []
+            def list(self, **kwargs):
+                self.list_calls.append(kwargs)
+                return DummyListRequest({'files': [{'id': 'file-1', 'name': 'database_20260715120000.json', 'size': '12', 'modifiedTime': '2026-07-15T00:00:00Z'}]})
+            def get_media(self, **kwargs):
+                self.get_media_calls.append(kwargs)
+                return DummyGetMediaRequest(json.dumps(payload).encode('utf-8'))
+
+        class DummyService:
+            def __init__(self, payload_bytes):
+                self._files = DummyFiles(payload_bytes)
+            def files(self):
+                return self._files
+
+        service = DummyService(json.dumps(payload).encode('utf-8'))
+        with patch.object(app_module, 'get_system_drive_folder_ids', return_value={'database': 'db-folder', 'metadata': 'meta-folder'}), patch.object(app_module, 'get_google_drive_credentials', return_value=object()), patch.object(app_module, 'build', return_value=service):
+            restored = app_module.restore_latest_backup()
+
+        self.assertIsNotNone(restored)
+        self.assertEqual(app_module.stories[0]['title'], 'Restore story')
+        self.assertEqual(app_module.stories[0]['chapters'][0]['content'], 'Restored content')
+
