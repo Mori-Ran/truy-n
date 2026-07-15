@@ -145,6 +145,10 @@ def get_system_drive_folder_ids():
 def get_google_drive_credentials():
     refresh_token = load_refresh_token()
     if not refresh_token:
+        app.logger.warning('Google Drive auth skipped because refresh token is empty.')
+        return None
+    if not GOOGLE_OAUTH_CLIENT_ID or not GOOGLE_OAUTH_CLIENT_SECRET:
+        app.logger.warning('Google Drive auth skipped because OAuth client ID/secret is empty.')
         return None
     return Credentials(
         token=None,
@@ -1020,13 +1024,20 @@ def create_story():
         with open(cover_path, 'rb') as fh:
             cover_bytes = fh.read()
         cover_folder_id, _ = get_google_drive_folder_ids()
+        app.logger.info('Story create cover upload: folder_id=%s filename=%s mime=%s', cover_folder_id, filename, cover_file.mimetype or 'application/octet-stream')
         if cover_folder_id:
             try:
                 uploaded = upload_file_to_google_drive(cover_bytes, filename, cover_file.mimetype or 'application/octet-stream', cover_folder_id)
                 if uploaded:
                     cover_drive_id = uploaded.get('id')
+                    app.logger.info('Story cover uploaded to Drive with file id=%s', cover_drive_id)
+                else:
+                    app.logger.warning('Story cover upload returned empty result for %s', filename)
             except Exception as exc:
+                app.logger.exception('Story cover upload failed for %s', filename)
                 flash(f'Không thể upload ảnh bìa lên Google Drive: {exc}', 'error')
+        else:
+            app.logger.warning('Story cover upload skipped because no valid Drive cover folder ID was resolved.')
 
     if not title or not author or not genre or not description:
         flash('Vui lòng điền đầy đủ thông tin truyện.', 'error')
@@ -1103,13 +1114,20 @@ def create_chapter(story_id):
         chapter_cover_name = filename
         with open(chapter_cover_path, 'rb') as fh:
             chapter_cover_bytes = fh.read()
+        app.logger.info('Chapter create cover upload: folder_id=%s filename=%s mime=%s', cover_folder_id, filename, chapter_cover.mimetype or 'application/octet-stream')
         if cover_folder_id:
             try:
                 uploaded = upload_file_to_google_drive(chapter_cover_bytes, filename, chapter_cover.mimetype or 'application/octet-stream', cover_folder_id)
                 if uploaded:
                     chapter_cover_drive_id = uploaded.get('id')
+                    app.logger.info('Chapter cover uploaded to Drive with file id=%s', chapter_cover_drive_id)
+                else:
+                    app.logger.warning('Chapter cover upload returned empty result for %s', filename)
             except Exception as exc:
+                app.logger.exception('Chapter cover upload failed for %s', filename)
                 flash(f'Không thể upload ảnh chapter lên Google Drive: {exc}', 'error')
+        else:
+            app.logger.warning('Chapter cover upload skipped because no valid Drive cover folder ID was resolved.')
 
     if not chapter_title or not chapter_content:
         flash('Vui lòng nhập tiêu đề và nội dung chapter.', 'error')
