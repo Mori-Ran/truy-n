@@ -91,12 +91,18 @@ def get_google_drive_folder_ids():
         'GOOGLE_DRIVE_COVER_IMAGE_FOLDER_ID',
         'GOOGLE_DRIVE_COVER-IMAGES_FOLDER_ID',
         'GOOGLE_DRIVE_COVER-IMAGE_FOLDER_ID',
+        'GOOGLE_DRIVE_COVER_FOLDER_ID',
+        'GOOGLE_DRIVE_COVER_FOLDER',
+        'GOOGLE_DRIVE_COVERPICTURE_FOLDER',
     )
     novel_folder_id = _read_drive_folder_setting(
         'GOOGLE_DRIVE_NOVELCONTENT_FOLDER_ID',
         'GOOGLE_DRIVE_NOVEL_CONTENT_FOLDER_ID',
         'GOOGLE_DRIVE_NOVEL-CONTENT_FOLDER_ID',
         'GOOGLE_DRIVE_NOVEL_CONTENT_FOLDER_ID',
+        'GOOGLE_DRIVE_NOVEL_FOLDER_ID',
+        'GOOGLE_DRIVE_NOVEL_FOLDER',
+        'GOOGLE_DRIVE_NOVELCONTENT_FOLDER',
     )
     return cover_folder_id, novel_folder_id
 

@@ -93,6 +93,15 @@ class AppTests(unittest.TestCase):
         self.assertEqual(cover_folder_id, 'cover-folder-id')
         self.assertEqual(novel_folder_id, 'novel-folder-id')
 
+    def test_drive_folder_ids_support_alias_env_names(self):
+        with patch.dict(os.environ, {
+            'GOOGLE_DRIVE_COVER_FOLDER_ID': 'cover-alias-id',
+            'GOOGLE_DRIVE_NOVEL_FOLDER_ID': 'novel-alias-id',
+        }, clear=False):
+            cover_folder_id, novel_folder_id = app_module.get_google_drive_folder_ids()
+        self.assertEqual(cover_folder_id, 'cover-alias-id')
+        self.assertEqual(novel_folder_id, 'novel-alias-id')
+
     def test_upload_file_to_google_drive_uses_media_upload(self):
         class DummyCreateRequest:
             def __init__(self, result):
