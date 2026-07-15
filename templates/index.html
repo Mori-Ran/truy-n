@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rose & Boss - Home</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body class="{{ 'admin-active' if is_admin else 'guest-active' }}">
+    <div class="auth-toggle-group">
+      <button type="button" id="authToggle" class="auth-toggle" aria-label="Open admin password" title="Mở hộp mật khẩu">🔐</button>
+      {% if is_admin %}
+        <form action="{{ url_for('logout') }}" method="post" class="auth-logout-form">
+          <button type="submit" class="auth-logout-btn" title="Đăng xuất khỏi chế độ admin">↩️</button>
+        </form>
+      {% endif %}
+    </div>
+    <div id="authOverlay" class="auth-overlay">
+      <div class="auth-card">
+        <h2>Chào mừng đến với Novel-BL</h2>
+        <p>Nhập mật khẩu để xem nội dung, hoặc chọn Bỏ qua để vào xem tổng quan.</p>
+        <input id="authPassword" type="password" placeholder="Nhập mật khẩu" aria-label="Mật khẩu" />
+        <div class="auth-actions">
+          <button id="authSubmit" class="btn btn--primary" type="button">Xác nhận mật khẩu</button>
+          <button id="authSkip" class="btn btn--ghost" type="button">Bỏ qua</button>
+        </div>
+        <div id="authMessage" class="auth-message"></div>
+      </div>
+    </div>
+
+    <div class="bg-orb orb-one"></div>
+    <div class="bg-orb orb-two"></div>
+
+    <header class="hero">
+      <div class="hero__text">
+        <p class="eyebrow">🌹 Novel-BL</p>
+        <h1>Nền tảng upload truyện.</h1>
+        <p class="hero__desc">
+          Bảng feed từ creators.
+        </p>
+        <div class="hero__actions">
+          {% if is_admin %}
+            <a href="{{ url_for('post_page') }}" class="btn btn--icon btn--primary admin-only" aria-label="Create story" title="Create story">＋</a>
+            <a href="{{ url_for('new_chapter_shortcut') }}" class="btn btn--icon btn--ghost admin-only" aria-label="Create chapter" title="Create chapter">✍️</a>
+            <form action="{{ url_for('backup_system') }}" method="post" style="display:inline;">
+              <button type="submit" class="btn btn--ghost admin-only" title="Tạo backup">🗂️ Backup</button>
+            </form>
+            <form action="{{ url_for('restore_system') }}" method="post" style="display:inline;">
+              <button type="submit" class="btn btn--ghost admin-only" title="Khôi phục backup gần nhất">♻️ Restore</button>
+            </form>
+          {% endif %}
+          <a href="#library" class="btn btn--ghost" aria-label="Read stories" title="Read stories">📚 Xem thư viện</a>
+          <button type="button" id="themeToggle" class="btn btn--ghost theme-toggle" aria-label="Switch theme" title="Switch theme">🎨 Change theme</button>
+        </div>
+      </div>
+
+      <div class="hero__media">
+        <div class="hero-carousel" aria-label="Featured stories carousel">
+          {% set hero_stories = stories | selectattr('cover') | list %}
+          {% if hero_stories %}
+            {% for story in hero_stories %}
+              <div class="hero-carousel__slide{% if loop.first %} is-active{% endif %}">
+                <img class="hero-carousel__image" src="{{ url_for('uploaded_file', filename=story.cover) }}" alt="{{ story.title }}" />
+                <div class="hero-carousel__caption">
+                  <span class="pill pill--soft">Featured</span>
+                  <h3>{{ story.title }}</h3>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="hero-carousel__slide is-active">
+              <div class="hero-carousel__placeholder">
+                <span class="pill pill--soft">Freshly written</span>
+                <h3>No stories yet</h3>
+                <p>Tạo nên tưởng tượng của bạn.</p>
+              </div>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel" id="library">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">💘 Latest stories</p>
+            <h2>Stories waiting to be loved</h2>
+          </div>
+          <div class="panel__actions">
+            {% if is_admin %}
+              <a href="{{ url_for('post_page') }}" class="text-link">Create one →</a>
+            {% endif %}
+          </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="flash flash--{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <div class="story-list">
+          {% for story in stories %}
+            <article class="story-folder">
+              <a href="{{ url_for('story_view', story_id=story.id) }}" class="story-folder__link">
+              <div class="story-folder__header">
+                {% if story.cover %}
+                  <img class="story-folder__cover" src="{{ url_for('uploaded_file', filename=story.cover) }}" alt="{{ story.title }}" />
+                {% else %}
+                  <div class="story-folder__cover story-folder__cover--empty"></div>
+                {% endif %}
+                <div class="story-folder__info">
+                  <h3>{{ story.title }}</h3>
+                  <p>{{ story.description }}</p>
+                  <span>{{ story.author }} · {{ story.genre }}</span>
+                </div>
+              </div>
+              </a>
+
+              <div class="story-folder__body">
+                {% if is_admin %}
+                  <div class="story-folder__actions">
+                    <a href="{{ url_for('edit_story', story_id=story.id) }}" class="btn btn--ghost">✏️ Sửa truyện</a>
+                    <form action="{{ url_for('delete_story', story_id=story.id) }}" method="post" style="display:inline;">
+                      <button type="submit" class="btn btn--ghost" onclick="return confirm('Xóa truyện này?');">🗑️ Xóa truyện</button>
+                    </form>
+                  </div>
+                {% endif %}
+                <div class="story-folder__content">
+                  <h4>Story content</h4>
+                  <p>{{ story.content }}</p>
+                </div>
+
+                <div class="story-folder__chapters">
+                  <h4>Chapters</h4>
+                  {% for chapter in story.chapters %}
+                    <div class="chapter-item">
+                      {% if chapter.cover %}
+                        <img class="chapter-item__cover" src="{{ url_for('uploaded_file', filename=chapter.cover) }}" alt="{{ chapter.title }}" />
+                      {% else %}
+                        <div class="chapter-item__cover chapter-item__cover--empty"></div>
+                      {% endif %}
+                      <div>
+                        <strong>{{ chapter.title }}</strong>
+                        <p>{{ chapter.content }}</p>
+                      </div>
+                      {% if is_admin %}
+                        <div class="chapter-item__actions">
+                          <a href="{{ url_for('edit_chapter', story_id=story.id, chapter_index=loop.index0) }}" class="text-link">Sửa</a>
+                          <form action="{{ url_for('delete_chapter', story_id=story.id, chapter_index=loop.index0) }}" method="post" style="display:inline;">
+                            <button type="submit" class="text-link" onclick="return confirm('Xóa chapter này?');">Xóa</button>
+                          </form>
+                        </div>
+                      {% endif %}
+                    </div>
+                  {% else %}
+                    <div class="empty-state empty-state--small">No chapters yet. Create the first one inside this story folder.</div>
+                  {% endfor %}
+                </div>
+
+              </div>
+            </article>
+          {% else %}
+            <div class="empty-state">No stories yet. Create the first one and let the romance bloom 🌷</div>
+          {% endfor %}
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+  </body>
+</html>

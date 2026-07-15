@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Choose story - Create chapter</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body class="{{ 'admin-active' if is_admin else 'guest-active' }}">
+    <div class="bg-orb orb-one"></div>
+    <div class="bg-orb orb-two"></div>
+
+    <main class="post-page">
+      <section class="panel">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">📚 Choose a story</p>
+            <h2>Select the story you want to add a chapter to</h2>
+          </div>
+          <a href="{{ url_for('index') }}" class="btn btn--ghost">← Back home</a>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="flash flash--{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <div class="story-list">
+          {% for story in stories %}
+            <article class="story-folder">
+              <a href="{{ url_for('new_chapter_page', story_id=story.id) }}" class="story-folder__link">
+                <div class="story-folder__header">
+                  {% if story.cover %}
+                    <img class="story-folder__cover" src="{{ url_for('uploaded_file', filename=story.cover) }}" alt="{{ story.title }}" />
+                  {% else %}
+                    <div class="story-folder__cover story-folder__cover--empty"></div>
+                  {% endif %}
+                  <div class="story-folder__info">
+                    <h3>{{ story.title }}</h3>
+                    <p>{{ story.description }}</p>
+                    <span>{{ story.author }} · {{ story.genre }}</span>
+                  </div>
+                </div>
+              </a>
+              <div class="story-folder__body">
+                <a href="{{ url_for('new_chapter_page', story_id=story.id) }}" class="btn btn--primary">✍️ Create chapter here</a>
+              </div>
+            </article>
+          {% else %}
+            <div class="empty-state">No stories yet. Create one first, then come back here.</div>
+          {% endfor %}
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ story.title }} - Rose & Boss</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body class="{{ 'admin-active' if is_admin else 'guest-active' }}">
+    <div class="bg-orb orb-one"></div>
+    <div class="bg-orb orb-two"></div>
+
+    <main class="post-page">
+      <section class="panel">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">📚 Story view</p>
+            <h2>{{ story.title }}</h2>
+          </div>
+          <a href="{{ url_for('index') }}" class="btn btn--ghost">← Back home</a>
+        </div>
+
+        <div class="story-view">
+          {% if story.cover %}
+            <img class="story-view__cover" src="{{ url_for('uploaded_file', filename=story.cover) }}" alt="{{ story.title }}" />
+          {% else %}
+            <div class="story-view__cover story-view__cover--empty"></div>
+          {% endif %}
+
+          <div class="story-view__info">
+            <p><strong>Tác giả:</strong> {{ story.author }}</p>
+            <p><strong>Thể loại:</strong> {{ story.genre }}</p>
+            <p><strong>Description:</strong> {{ story.description }}</p>
+          </div>
+        </div>
+
+        <div class="story-view__chapters">
+          <h3>Chapters</h3>
+          {% for chapter in story.chapters %}
+            <a class="chapter-link" href="{{ url_for('read_chapter', story_id=story.id, chapter_index=loop.index0) }}">
+              <div class="chapter-link__cover">
+                {% if chapter.cover %}
+                  <img src="{{ url_for('uploaded_file', filename=chapter.cover) }}" alt="{{ chapter.title }}" />
+                {% endif %}
+              </div>
+              <div>
+                <strong>{{ chapter.title }}</strong>
+                <p>{{ chapter.content[:120] }}{% if chapter.content|length > 120 %}...{% endif %}</p>
+              </div>
+            </a>
+          {% else %}
+            <div class="empty-state">No chapters yet.</div>
+          {% endfor %}
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+  </body>
+</html>

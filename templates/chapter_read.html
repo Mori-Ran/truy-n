@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ chapter.title }} - {{ story.title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body class="{{ 'admin-active' if is_admin else 'guest-active' }}">
+    <div class="bg-orb orb-one"></div>
+    <div class="bg-orb orb-two"></div>
+
+    <main class="post-page">
+      <section class="panel">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">📖 Reading chapter</p>
+            <h2>{{ chapter.title }}</h2>
+          </div>
+          <a href="{{ url_for('story_view', story_id=story.id) }}" class="btn btn--ghost">← Back to story</a>
+        </div>
+
+        {% if chapter.cover %}
+          <img class="chapter-read__cover" src="{{ url_for('uploaded_file', filename=chapter.cover) }}" alt="{{ chapter.title }}" />
+        {% endif %}
+
+        <div class="chapter-read__content">
+          <p>{{ chapter.content }}</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+  </body>
+</html>

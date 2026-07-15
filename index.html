@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Novel-BL</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb orb-one"></div>
+    <div class="bg-orb orb-two"></div>
+
+    <header class="hero">
+      <div class="hero__text">
+        <p class="eyebrow">🌹 Truyện/p>
+        <h1>Upload truyện, rồi để thế giới ngắm vẻ đẹp của bạn.</h1>
+        <p class="hero__desc">
+          Một nền tảng upload truyện cho những ai yêu thích Boy love.
+        </p>
+        <div class="hero__actions">
+          <a href="#upload" class="btn btn--primary">📤 Tải truyện lên</a>
+          <a href="#library" class="btn btn--ghost">📚 Xem thư viện</a>
+        </div>
+      </div>
+
+      <div class="hero__card">
+        <div class="hero__card-top">
+          <span class="pill">Hot now</span>
+          <span class="pill pill--soft">Boylove</span>
+        </div>
+        <h3>“Tổng tài và người giữ lời hứa”</h3>
+        <p>Được yêu thích bởi hàng nghìn độc giả trong tuần này.</p>
+        <div class="stat-grid">
+          <div>
+            <strong>1.2k</strong>
+            <span>lượt xem</span>
+          </div>
+          <div>
+            <strong>96%</strong>
+            <span>đánh giá yêu thích</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel" id="upload">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">✨ Tạo một câu chuyện mới</p>
+            <h2>Upload truyện cực dễ thương</h2>
+          </div>
+          <div class="panel__badge">Chưa cần backend</div>
+        </div>
+
+        <form class="upload-form">
+          <div class="dropzone" id="dropzone">
+            <input type="file" id="coverInput" accept="image/*" />
+            <div class="dropzone__content">
+              <div class="dropzone__icon">🖼️</div>
+              <p>Kéo ảnh bìa vào đây hoặc bấm để chọn</p>
+              <span>PNG, JPG, WEBP</span>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              <span>Tên truyện</span>
+              <input type="text" placeholder="Ví dụ: Mùa hạ của anh và em" />
+            </label>
+            <label>
+              <span>Tác giả</span>
+              <input type="text" placeholder="Tên bạn hoặc biệt danh" />
+            </label>
+            <label>
+              <span>Thể loại</span>
+              <input type="text" placeholder="Boylove, fantasy, drama..." />
+            </label>
+            <label>
+              <span>Tag</span>
+              <input type="text" placeholder="#rose #tổngtài #sweet" />
+            </label>
+            <label class="full">
+              <span>Mô tả ngắn</span>
+              <textarea rows="4" placeholder="Viết một câu chạm tới trái tim độc giả..."></textarea>
+            </label>
+            <label class="full">
+              <span>Nội dung truyện</span>
+              <textarea rows="8" placeholder="Đã đến lúc để câu chuyện đáng yêu của bạn xuất hiện..."></textarea>
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn--primary">💗 Đăng truyện</button>
+            <button type="button" class="btn btn--ghost">📝 Lưu bản nháp</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel" id="library">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">💘 Truyện mới nhất</p>
+            <h2>Khung nhìn thư viện đầy màu hồng</h2>
+          </div>
+          <a href="#" class="text-link">Xem tất cả →</a>
+        </div>
+
+        <div class="story-grid">
+          <article class="story-card">
+            <div class="story-card__cover cover-a"></div>
+            <div class="story-card__body">
+              <h3>Người giữ nửa bầu trời</h3>
+              <p>Hai người gặp nhau giữa mưa và ngọn đèn, rồi yêu nhau bằng sự im lặng.</p>
+              <span>Đã đăng · 3 chương</span>
+            </div>
+          </article>
+
+          <article class="story-card">
+            <div class="story-card__cover cover-b"></div>
+            <div class="story-card__body">
+              <h3>Vì anh là tổng tài</h3>
+              <p>Nhịp tim rè rè, ánh mắt không rời, và một lời hứa rất đẹp.</p>
+              <span>Đã đăng · 8 chương</span>
+            </div>
+          </article>
+
+          <article class="story-card">
+            <div class="story-card__cover cover-c"></div>
+            <div class="story-card__body">
+              <h3>Hoa hồng trên bàn tay</h3>
+              <p>Yêu thương không cần lời nói, chỉ cần một cái ôm đủ ấm.</p>
+              <span>Đã đăng · 5 chương</span>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create chapter - {{ story.title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body class="{{ 'admin-active' if is_admin else 'guest-active' }}">
+    <div class="bg-orb orb-one"></div>
+    <div class="bg-orb orb-two"></div>
+
+    <main class="post-page">
+      <section class="panel">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">📖 Create chapter</p>
+            <h2>{{ story.title }}</h2>
+          </div>
+          <a href="{{ url_for('index') }}" class="btn btn--ghost">← Quay về home</a>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="flash flash--{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form class="upload-form" action="{{ url_for('create_chapter', story_id=story.id) }}" method="post" enctype="multipart/form-data">
+          <div class="preview-card">
+            <div class="preview-card__image" id="chapterPreview"></div>
+            <div class="preview-card__meta">
+              <h3>Chapter cover preview</h3>
+              <p>Select an image from your device to preview it before creating the chapter.</p>
+            </div>
+          </div>
+
+          <div class="dropzone" id="dropzone">
+            <input type="file" id="coverInput" name="chapter_cover" accept="image/*" />
+            <div class="dropzone__content">
+              <div class="dropzone__icon">🖼️</div>
+              <p>Drag and drop chapter cover or tap to browse</p>
+              <span>Any image file type is accepted</span>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <label class="full">
+              <span>Chapter title</span>
+              <input type="text" name="chapter_title" placeholder="Enter chapter title" required />
+            </label>
+            <label class="full">
+              <span>Chapter content</span>
+              <textarea rows="10" name="chapter_content" placeholder="Write your chapter content here..." required></textarea>
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn--primary">✨ Create chapter</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+  </body>
+</html>

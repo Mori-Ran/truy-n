@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create your story - Rose & Boss</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body class="{{ 'admin-active' if is_admin else 'guest-active' }}">
+    <div class="bg-orb orb-one"></div>
+    <div class="bg-orb orb-two"></div>
+
+    <main class="post-page">
+      <section class="panel">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">🌸 Create your story</p>
+            <h2>Post a lovely story with a dreamy cover</h2>
+          </div>
+          <a href="{{ url_for('index') }}" class="btn btn--ghost">← Quay về home</a>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="flash flash--{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form class="upload-form" action="{{ url_for('create_story') }}" method="post" enctype="multipart/form-data">
+          <div class="preview-card">
+            <div class="preview-card__image" id="coverPreview"></div>
+            <div class="preview-card__meta">
+              <h3>Cover preview</h3>
+              <p>Choose an image from your device, preview it here, and switch if you want.</p>
+            </div>
+          </div>
+
+          <div class="dropzone" id="dropzone">
+            <input type="file" id="coverInput" name="cover" accept="image/*" />
+            <div class="dropzone__content">
+              <div class="dropzone__icon">🖼️</div>
+              <p>Drag and drop your cover or tap to browse</p>
+              <span>Any image file type is accepted</span>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              <span>Tên truyện</span>
+              <input type="text" name="title" placeholder="Ví dụ: Mùa hạ của anh và em" required />
+            </label>
+            <label>
+              <span>Tác giả</span>
+              <input type="text" name="author" placeholder="Tên bạn hoặc biệt danh" required />
+            </label>
+            <label>
+              <span>Thể loại</span>
+              <input type="text" name="genre" placeholder="Boylove, fantasy, drama..." required />
+            </label>
+            <label>
+              <span>Tag</span>
+              <input type="text" name="tags" placeholder="#rose #tổngtài #sweet" />
+            </label>
+            <label class="full">
+              <span>Description</span>
+              <textarea rows="4" name="description" placeholder="Write a short description that feels warm and sticky..." required></textarea>
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn--primary">✨ Create story</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+  </body>
+</html>

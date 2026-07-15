@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chỉnh sửa truyện - {{ story.title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body class="{{ 'admin-active' if is_admin else 'guest-active' }}">
+    <div class="bg-orb orb-one"></div>
+    <div class="bg-orb orb-two"></div>
+    <main class="post-page">
+      <section class="panel">
+        <div class="panel__header">
+          <div>
+            <p class="eyebrow">✏️ Edit story</p>
+            <h2>{{ story.title }}</h2>
+          </div>
+          <a href="{{ url_for('index') }}" class="btn btn--ghost">← Quay về home</a>
+        </div>
+        <form class="upload-form" action="{{ url_for('edit_story', story_id=story.id) }}" method="post">
+          <div class="form-grid">
+            <label>
+              <span>Tên truyện</span>
+              <input type="text" name="title" value="{{ story.title }}" required />
+            </label>
+            <label>
+              <span>Tác giả</span>
+              <input type="text" name="author" value="{{ story.author }}" required />
+            </label>
+            <label>
+              <span>Thể loại</span>
+              <input type="text" name="genre" value="{{ story.genre }}" required />
+            </label>
+            <label>
+              <span>Tag</span>
+              <input type="text" name="tags" value="{{ story.tags or '' }}" />
+            </label>
+            <label class="full">
+              <span>Description</span>
+              <textarea rows="4" name="description" required>{{ story.description }}</textarea>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn--primary">💾 Lưu thay đổi</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>
